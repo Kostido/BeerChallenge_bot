@@ -40,6 +40,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     # Store photo file_id for the next step
     context.user_data['photo_file_id'] = photo_file_id
+    
+    # Сохраняем ID и chat_id сообщения с фотографией для последующего удаления
+    context.user_data['original_message_id'] = message.message_id
+    context.user_data['original_chat_id'] = message.chat_id
+    logger.info(f"Stored original message details: message_id={message.message_id}, chat_id={message.chat_id}")
 
     # Define the volume options
     keyboard = [
@@ -70,6 +75,10 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info(f"User {user.first_name} ({user.id}) canceled volume selection.")
         if 'photo_file_id' in context.user_data:
             del context.user_data['photo_file_id']
+        if 'original_message_id' in context.user_data:
+            del context.user_data['original_message_id']
+        if 'original_chat_id' in context.user_data:
+            del context.user_data['original_chat_id']
         await query.edit_message_text(text="Добавление пива отменено.")
         return ConversationHandler.END
 
@@ -104,7 +113,7 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
             new_volume = get_user_total_volume(db, user.id)
             logger.info(f"User {user.id} new volume: {new_volume} L")
 
-        # Сообщение пользователю
+        # Сообщение пользователю в личный чат
         await query.edit_message_text(
             text=f"Отлично! Засчитано {volume:.2f} л пива. 🍻\nВсего ты выпил(а): {new_volume:.2f} л пива."
         )
@@ -114,12 +123,40 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
             username = f"@{user.username}" if user.username else user.first_name
             caption = f"🍺 {username} выпил(а) {volume:.2f} л пива! 🍻\n📊 Всего выпито: {new_volume:.2f} л"
             try:
+                # Получаем сохраненные данные об исходном сообщении с фотографией
+                original_message_id = context.user_data.get('original_message_id')
+                original_chat_id = context.user_data.get('original_chat_id')
+
+                # Отправляем фото от имени бота
                 await context.bot.send_photo(
                     chat_id=GROUP_CHAT_ID,
                     photo=photo_file_id,
                     caption=caption
                 )
                 logger.info(f"Beer submission forwarded to group chat: {GROUP_CHAT_ID}")
+                
+                # Удаляем исходное сообщение пользователя с фотографией,
+                # если находимся в групповом чате и удалось получить ID исходного сообщения
+                if original_message_id and original_chat_id == GROUP_CHAT_ID:
+                    try:
+                        await context.bot.delete_message(
+                            chat_id=original_chat_id,
+                            message_id=original_message_id
+                        )
+                        logger.info(f"Original user photo message deleted: {original_message_id}")
+                    except Exception as delete_error:
+                        logger.error(f"Failed to delete original message: {delete_error}", exc_info=True)
+                
+                # Удаляем сообщение с инлайн-клавиатурой в групповом чате
+                if query.message.chat_id == GROUP_CHAT_ID:
+                    try:
+                        await context.bot.delete_message(
+                            chat_id=query.message.chat_id,
+                            message_id=query.message.message_id
+                        )
+                        logger.info(f"Inline keyboard message deleted in group chat: {query.message.message_id}")
+                    except Exception as delete_error:
+                        logger.error(f"Failed to delete inline keyboard message: {delete_error}", exc_info=True)
             except Exception as e:
                 logger.error(f"Failed to forward submission to group chat: {e}", exc_info=True)
         else:
@@ -180,7 +217,12 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
         
         logger.info(f"Successfully added entry for user {user.id}: {volume}L")
         # Clear stored data
-        del context.user_data['photo_file_id']
+        if 'photo_file_id' in context.user_data:
+            del context.user_data['photo_file_id']
+        if 'original_message_id' in context.user_data:
+            del context.user_data['original_message_id']
+        if 'original_chat_id' in context.user_data:
+            del context.user_data['original_chat_id']
         return ConversationHandler.END
 
     except Exception as e:
@@ -189,6 +231,10 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
         # Clear stored data even on error
         if 'photo_file_id' in context.user_data:
              del context.user_data['photo_file_id']
+        if 'original_message_id' in context.user_data:
+            del context.user_data['original_message_id']
+        if 'original_chat_id' in context.user_data:
+            del context.user_data['original_chat_id']
         return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -198,6 +244,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Clear stored data if any
     if 'photo_file_id' in context.user_data:
         del context.user_data['photo_file_id']
+    if 'original_message_id' in context.user_data:
+        del context.user_data['original_message_id']
+    if 'original_chat_id' in context.user_data:
+        del context.user_data['original_chat_id']
 
     await update.message.reply_text(
         'Добавление пива отменено.'
