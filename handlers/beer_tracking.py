@@ -106,13 +106,13 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
 
         # Сообщение пользователю
         await query.edit_message_text(
-            text=f"Отлично! Засчитано {volume:.2f} л пива. 🍻"
+            text=f"Отлично! Засчитано {volume:.2f} л пива. 🍻\nВсего ты выпил(а): {new_volume:.2f} л пива."
         )
         
         # Отправляем фото и информацию в групповой чат
         if GROUP_CHAT_ID:
             username = f"@{user.username}" if user.username else user.first_name
-            caption = f"🍺 {username} выпил(а) {volume:.2f} л пива! 🍻"
+            caption = f"🍺 {username} выпил(а) {volume:.2f} л пива! 🍻\n📊 Всего выпито: {new_volume:.2f} л"
             try:
                 await context.bot.send_photo(
                     chat_id=GROUP_CHAT_ID,
