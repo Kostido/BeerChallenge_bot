@@ -1,5 +1,6 @@
 # handlers/beer_tracking.py
 import logging
+import os
 from telegram import Update, Message, PhotoSize, InlineKeyboardButton, InlineKeyboardMarkup # Added InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
@@ -9,7 +10,9 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler, # Added CallbackQueryHandler
 )
-from db_utils import add_or_update_user, add_beer_entry, get_db
+from db_utils import add_or_update_user, add_beer_entry, get_db, get_user_total_volume
+from config import GROUP_CHAT_ID  # Импортируем ID группового чата
+from handlers.achievements import check_new_achievement, format_achievement_message
 
 # Enable logging
 logging.basicConfig(
@@ -89,12 +92,96 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
     # Save to database
     try:
         with next(get_db()) as db:
+            # Получаем текущий объем выпитого пива перед добавлением новой записи
+            old_volume = get_user_total_volume(db, user.id)
+            
             db_user = add_or_update_user(db, user_id=user.id, first_name=user.first_name, username=user.username)
             add_beer_entry(db, user_id=db_user.id, volume=volume, photo_id=photo_file_id)
+            
+            # Получаем обновленный объем после добавления
+            new_volume = get_user_total_volume(db, user.id)
 
+        # Сообщение пользователю
         await query.edit_message_text(
             text=f"Отлично! Засчитано {volume:.2f} л пива. 🍻"
         )
+        
+        # Отправляем фото и информацию в групповой чат
+        if GROUP_CHAT_ID:
+            username = f"@{user.username}" if user.username else user.first_name
+            caption = f"🍺 {username} выпил(а) {volume:.2f} л пива! 🍻"
+            try:
+                await context.bot.send_photo(
+                    chat_id=GROUP_CHAT_ID,
+                    photo=photo_file_id,
+                    caption=caption
+                )
+                logger.info(f"Beer submission forwarded to group chat: {GROUP_CHAT_ID}")
+            except Exception as e:
+                logger.error(f"Failed to forward submission to group chat: {e}", exc_info=True)
+        else:
+            logger.warning("GROUP_CHAT_ID not set, cannot forward beer submission")
+        
+        # Проверяем достижения пользователя
+        new_achievement = check_new_achievement(old_volume, new_volume)
+        if new_achievement:
+            username_display = f"@{user.username}" if user.username else user.first_name
+            achievement_message = format_achievement_message(new_achievement, username_display)
+            
+            # Отправляем сообщение и изображение о достижении пользователю
+            try:
+                # Проверяем, существует ли файл изображения
+                if os.path.exists(new_achievement['image']):
+                    with open(new_achievement['image'], 'rb') as photo:
+                        await context.bot.send_photo(
+                            chat_id=user.id,
+                            photo=photo,
+                            caption=achievement_message
+                        )
+                else:
+                    # Если файл не существует, отправляем только текстовое сообщение
+                    await context.bot.send_message(
+                        chat_id=user.id,
+                        text=achievement_message
+                    )
+                    logger.warning(f"Achievement image not found: {new_achievement['image']}")
+            except Exception as e:
+                logger.error(f"Failed to send achievement to user: {e}", exc_info=True)
+                # Если не удалось отправить изображение, отправляем только текст
+                await context.bot.send_message(
+                    chat_id=user.id,
+                    text=achievement_message
+                )
+            
+            # Отправляем сообщение и изображение о достижении в групповой чат
+            if GROUP_CHAT_ID:
+                try:
+                    # Проверяем, существует ли файл изображения
+                    if os.path.exists(new_achievement['image']):
+                        with open(new_achievement['image'], 'rb') as photo:
+                            await context.bot.send_photo(
+                                chat_id=GROUP_CHAT_ID,
+                                photo=photo,
+                                caption=achievement_message
+                            )
+                    else:
+                        # Если файл не существует, отправляем только текстовое сообщение
+                        await context.bot.send_message(
+                            chat_id=GROUP_CHAT_ID,
+                            text=achievement_message
+                        )
+                    logger.info(f"Achievement notification sent to group chat: {GROUP_CHAT_ID}")
+                except Exception as e:
+                    logger.error(f"Failed to send achievement notification to group chat: {e}", exc_info=True)
+                    # Если не удалось отправить изображение, отправляем только текст
+                    try:
+                        await context.bot.send_message(
+                            chat_id=GROUP_CHAT_ID,
+                            text=achievement_message
+                        )
+                    except:
+                        pass
+        
         logger.info(f"Successfully added entry for user {user.id}: {volume}L")
         # Clear stored data
         del context.user_data['photo_file_id']

@@ -65,3 +65,21 @@ def get_leaderboard(db: Session, limit: int = 10) -> list[tuple[str | None, str 
     # Return first_name, username, and volume
     leaderboard = [(first_name, username, volume) for first_name, username, volume in results]
     return leaderboard
+
+def get_user_total_volume(db: Session, user_id: int) -> float:
+    """
+    Получает общий объем выпитого пива пользователем.
+    
+    Args:
+        db (Session): Сессия базы данных
+        user_id (int): ID пользователя
+        
+    Returns:
+        float: Общий объем выпитого пива в литрах
+    """
+    result = (
+        db.query(func.sum(BeerEntry.volume_liters).label('total_volume'))
+        .filter(BeerEntry.user_id == user_id)
+        .scalar()
+    )
+    return result or 0.0  # Возвращаем 0, если у пользователя еще нет записей

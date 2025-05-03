@@ -6,6 +6,8 @@ load_dotenv()
 
 # Bot token from environment variable
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Group chat ID for sharing beer submissions
+GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID")
 
 # Ensure essential variables are set
 if not BOT_TOKEN:
