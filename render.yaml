@@ -1,0 +1,19 @@
+services:
+  # Сервис с Telegram ботом
+  - type: web
+    name: beer-challenge-bot
+    env: docker
+    plan: free # Можно изменить на paid для продакшена
+    dockerfilePath: ./Dockerfile
+    numInstances: 1
+    envVars:
+      - key: BOT_TOKEN
+        sync: false # Это значение должно быть задано вручную в UI Render
+      - key: GROUP_CHAT_ID
+        sync: false # Это значение должно быть задано вручную в UI Render
+    
+    # Настройки для постоянного хранения данных между перезапусками контейнера
+    disk:
+      name: beer-challenge-data
+      mountPath: /app/database
+      sizeGB: 1 # 1GB свободного места для базы данных 
