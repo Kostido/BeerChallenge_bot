@@ -95,12 +95,14 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
         with next(get_db()) as db:
             # Получаем текущий объем выпитого пива перед добавлением новой записи
             old_volume = get_user_total_volume(db, user.id)
+            logger.info(f"User {user.id} old volume: {old_volume} L")
             
             db_user = add_or_update_user(db, user_id=user.id, first_name=user.first_name, username=user.username)
             add_beer_entry(db, user_id=db_user.id, volume=volume, photo_id=photo_file_id)
             
             # Получаем обновленный объем после добавления
             new_volume = get_user_total_volume(db, user.id)
+            logger.info(f"User {user.id} new volume: {new_volume} L")
 
         # Сообщение пользователю
         await query.edit_message_text(
@@ -124,42 +126,57 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.warning("GROUP_CHAT_ID not set, cannot forward beer submission")
         
         # Проверяем достижения пользователя
+        logger.debug(f"Checking achievements for user {user.id}: old={old_volume}, new={new_volume}")
         new_achievement = check_new_achievement(old_volume, new_volume)
+        
         if new_achievement:
+            logger.info(f"User {user.id} reached new achievement: {new_achievement['title']} ({new_achievement['volume']} L)")
             username_display = f"@{user.username}" if user.username else user.first_name
             achievement_message = format_achievement_message(new_achievement, username_display)
+            
+            # Отладка путей к изображениям
+            image_path = new_achievement.get('image', '')
+            logger.debug(f"Achievement image path: {image_path}")
+            logger.debug(f"Image exists: {os.path.exists(image_path) if image_path else 'N/A'}")
+            logger.debug(f"Current directory: {os.getcwd()}")
             
             # Отправляем сообщение и изображение о достижении только в групповой чат
             if GROUP_CHAT_ID:
                 try:
+                    logger.info(f"Trying to send achievement notification to group chat: {GROUP_CHAT_ID}")
                     # Проверяем, существует ли файл изображения
-                    if os.path.exists(new_achievement['image']):
-                        with open(new_achievement['image'], 'rb') as photo:
+                    if image_path and os.path.exists(image_path):
+                        logger.info(f"Sending achievement with image: {image_path}")
+                        with open(image_path, 'rb') as photo:
                             await context.bot.send_photo(
                                 chat_id=GROUP_CHAT_ID,
                                 photo=photo,
                                 caption=achievement_message
                             )
                     else:
+                        logger.warning(f"Achievement image not found: {image_path}, sending text only")
                         # Если файл не существует, отправляем только текстовое сообщение
                         await context.bot.send_message(
                             chat_id=GROUP_CHAT_ID,
                             text=achievement_message
                         )
-                        logger.warning(f"Achievement image not found: {new_achievement['image']}")
                     logger.info(f"Achievement notification sent to group chat: {GROUP_CHAT_ID}")
                 except Exception as e:
                     logger.error(f"Failed to send achievement notification to group chat: {e}", exc_info=True)
                     # Если не удалось отправить изображение, отправляем только текст
                     try:
+                        logger.info("Trying to send fallback text-only achievement notification")
                         await context.bot.send_message(
                             chat_id=GROUP_CHAT_ID,
                             text=achievement_message
                         )
-                    except:
-                        pass
+                        logger.info("Fallback text-only achievement notification sent")
+                    except Exception as inner_e:
+                        logger.error(f"Also failed to send text-only achievement: {inner_e}", exc_info=True)
             else:
                 logger.warning("GROUP_CHAT_ID not set, cannot send achievement notification")
+        else:
+            logger.debug(f"No new achievement for user {user.id}")
         
         logger.info(f"Successfully added entry for user {user.id}: {volume}L")
         # Clear stored data
