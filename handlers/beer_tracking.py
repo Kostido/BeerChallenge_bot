@@ -129,32 +129,7 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
             username_display = f"@{user.username}" if user.username else user.first_name
             achievement_message = format_achievement_message(new_achievement, username_display)
             
-            # Отправляем сообщение и изображение о достижении пользователю
-            try:
-                # Проверяем, существует ли файл изображения
-                if os.path.exists(new_achievement['image']):
-                    with open(new_achievement['image'], 'rb') as photo:
-                        await context.bot.send_photo(
-                            chat_id=user.id,
-                            photo=photo,
-                            caption=achievement_message
-                        )
-                else:
-                    # Если файл не существует, отправляем только текстовое сообщение
-                    await context.bot.send_message(
-                        chat_id=user.id,
-                        text=achievement_message
-                    )
-                    logger.warning(f"Achievement image not found: {new_achievement['image']}")
-            except Exception as e:
-                logger.error(f"Failed to send achievement to user: {e}", exc_info=True)
-                # Если не удалось отправить изображение, отправляем только текст
-                await context.bot.send_message(
-                    chat_id=user.id,
-                    text=achievement_message
-                )
-            
-            # Отправляем сообщение и изображение о достижении в групповой чат
+            # Отправляем сообщение и изображение о достижении только в групповой чат
             if GROUP_CHAT_ID:
                 try:
                     # Проверяем, существует ли файл изображения
@@ -171,6 +146,7 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
                             chat_id=GROUP_CHAT_ID,
                             text=achievement_message
                         )
+                        logger.warning(f"Achievement image not found: {new_achievement['image']}")
                     logger.info(f"Achievement notification sent to group chat: {GROUP_CHAT_ID}")
                 except Exception as e:
                     logger.error(f"Failed to send achievement notification to group chat: {e}", exc_info=True)
@@ -182,6 +158,8 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
                         )
                     except:
                         pass
+            else:
+                logger.warning("GROUP_CHAT_ID not set, cannot send achievement notification")
         
         logger.info(f"Successfully added entry for user {user.id}: {volume}L")
         # Clear stored data
