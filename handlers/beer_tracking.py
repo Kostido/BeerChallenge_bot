@@ -73,12 +73,33 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if volume_data == 'cancel_volume':
         logger.info(f"User {user.first_name} ({user.id}) canceled volume selection.")
+        
+        # Удаляем сообщение-подсказку при отмене
+        prompt_message_id = context.user_data.get('prompt_message_id')
+        prompt_chat_id = context.user_data.get('prompt_chat_id')
+        
+        if prompt_message_id and prompt_chat_id:
+            try:
+                await context.bot.delete_message(
+                    chat_id=prompt_chat_id,
+                    message_id=prompt_message_id
+                )
+                logger.info(f"Deleted prompt message after cancel: {prompt_message_id}")
+            except Exception as delete_error:
+                logger.error(f"Failed to delete prompt message after cancel: {delete_error}", exc_info=True)
+        
+        # Очищаем user_data
         if 'photo_file_id' in context.user_data:
             del context.user_data['photo_file_id']
         if 'original_message_id' in context.user_data:
             del context.user_data['original_message_id']
         if 'original_chat_id' in context.user_data:
             del context.user_data['original_chat_id']
+        if 'prompt_message_id' in context.user_data:
+            del context.user_data['prompt_message_id']
+        if 'prompt_chat_id' in context.user_data:
+            del context.user_data['prompt_chat_id']
+            
         await query.edit_message_text(text="Добавление пива отменено.")
         return ConversationHandler.END
 
@@ -216,6 +237,25 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.debug(f"No new achievement for user {user.id}")
         
         logger.info(f"Successfully added entry for user {user.id}: {volume}L")
+        
+        # Удаляем сообщение-подсказку "Отправь мне фото с пивом", если оно было сохранено
+        prompt_message_id = context.user_data.get('prompt_message_id')
+        prompt_chat_id = context.user_data.get('prompt_chat_id')
+        
+        if prompt_message_id and prompt_chat_id:
+            try:
+                await context.bot.delete_message(
+                    chat_id=prompt_chat_id,
+                    message_id=prompt_message_id
+                )
+                logger.info(f"Deleted prompt message: {prompt_message_id} in chat {prompt_chat_id}")
+                
+                # Очищаем данные о сообщении
+                del context.user_data['prompt_message_id']
+                del context.user_data['prompt_chat_id']
+            except Exception as delete_error:
+                logger.error(f"Failed to delete prompt message: {delete_error}", exc_info=True)
+        
         # Clear stored data
         if 'photo_file_id' in context.user_data:
             del context.user_data['photo_file_id']
@@ -228,6 +268,21 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         logger.error(f"Database error while adding beer entry for user {user.id}: {e}", exc_info=True)
         await query.edit_message_text(text="Произошла ошибка при сохранении данных. Попробуй позже.")
+        
+        # Удаляем сообщение-подсказку при ошибке
+        prompt_message_id = context.user_data.get('prompt_message_id')
+        prompt_chat_id = context.user_data.get('prompt_chat_id')
+        
+        if prompt_message_id and prompt_chat_id:
+            try:
+                await context.bot.delete_message(
+                    chat_id=prompt_chat_id,
+                    message_id=prompt_message_id
+                )
+                logger.info(f"Deleted prompt message after error: {prompt_message_id}")
+            except Exception as delete_error:
+                logger.error(f"Failed to delete prompt message after error: {delete_error}", exc_info=True)
+        
         # Clear stored data even on error
         if 'photo_file_id' in context.user_data:
              del context.user_data['photo_file_id']
@@ -235,12 +290,31 @@ async def handle_volume_choice(update: Update, context: ContextTypes.DEFAULT_TYP
             del context.user_data['original_message_id']
         if 'original_chat_id' in context.user_data:
             del context.user_data['original_chat_id']
+        if 'prompt_message_id' in context.user_data:
+            del context.user_data['prompt_message_id']
+        if 'prompt_chat_id' in context.user_data:
+            del context.user_data['prompt_chat_id']
         return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels and ends the conversation (used by /cancel command)."""
     user = update.message.from_user
     logger.info(f"User {user.first_name} ({user.id}) canceled the conversation via command.")
+    
+    # Удаляем сообщение-подсказку при отмене через команду
+    prompt_message_id = context.user_data.get('prompt_message_id')
+    prompt_chat_id = context.user_data.get('prompt_chat_id')
+    
+    if prompt_message_id and prompt_chat_id:
+        try:
+            await context.bot.delete_message(
+                chat_id=prompt_chat_id,
+                message_id=prompt_message_id
+            )
+            logger.info(f"Deleted prompt message after cancel command: {prompt_message_id}")
+        except Exception as delete_error:
+            logger.error(f"Failed to delete prompt message after cancel command: {delete_error}", exc_info=True)
+    
     # Clear stored data if any
     if 'photo_file_id' in context.user_data:
         del context.user_data['photo_file_id']
@@ -248,6 +322,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         del context.user_data['original_message_id']
     if 'original_chat_id' in context.user_data:
         del context.user_data['original_chat_id']
+    if 'prompt_message_id' in context.user_data:
+        del context.user_data['prompt_message_id']
+    if 'prompt_chat_id' in context.user_data:
+        del context.user_data['prompt_chat_id']
 
     await update.message.reply_text(
         'Добавление пива отменено.'
