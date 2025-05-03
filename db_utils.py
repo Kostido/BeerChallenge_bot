@@ -33,8 +33,19 @@ def add_or_update_user(db: Session, user_id: int, first_name: Optional[str], use
     db.refresh(db_user)
     return db_user
 
-def add_beer_entry(db: Session, user_id: int, volume: float, photo_id: str) -> BeerEntry:
-    """Adds a new beer entry for a user."""
+def add_beer_entry(db: Session, user_id: int, volume: float, photo_id: str = None) -> BeerEntry:
+    """
+    Adds a new beer entry for a user.
+    
+    Args:
+        db (Session): Database session
+        user_id (int): User ID
+        volume (float): Volume of beer in liters
+        photo_id (str, optional): Telegram photo file ID or special value for initial entry
+        
+    Returns:
+        BeerEntry: Created database entry
+    """
     # Ensure user exists (optional, depends on workflow)
     # user = db.query(User).filter(User.id == user_id).first()
     # if not user:

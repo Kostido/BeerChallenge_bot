@@ -23,6 +23,9 @@ async def show_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     user_id = user.id
     current_time = time.time()
 
+    # Сохраняем ID сообщения пользователя, запросившего таблицу лидеров, чтобы удалить его позже
+    user_message_id = update.message.message_id if update.message else None
+    
     # Check cooldown for the user
     last_request_time = context.user_data.get(f'leaderboard_last_request_{user_id}', 0)
     if current_time - last_request_time < LEADERBOARD_COOLDOWN:
@@ -80,13 +83,42 @@ async def show_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 medal = medals.get(i, f"{i}.") # Get medal or use number
                 leaderboard_text += f"{medal} {display_name} - {volume:.2f} л\n"
 
-        sent_message = await update.message.reply_text(leaderboard_text)
+        # Отправляем таблицу как новое сообщение (не как reply)
+        sent_message = await context.bot.send_message(
+            chat_id=chat_id,
+            text=leaderboard_text
+        )
 
         # Store the new message ID per user
         context.user_data[f'last_leaderboard_message_id_{user_id}'] = sent_message.message_id
         # Update the last request time for the user
         context.user_data[f'leaderboard_last_request_{user_id}'] = current_time
         logger.info(f"Stored new leaderboard message ID {sent_message.message_id} for user {user_id} in chat {chat_id}.")
+        
+        # Удаляем сообщение пользователя с запросом таблицы лидеров
+        if user_message_id:
+            try:
+                # Проверяем, является ли чат групповым
+                is_group = update.effective_chat.type in ["group", "supergroup"]
+                
+                if is_group:
+                    # Проверяем права бота перед удалением
+                    bot_member = await context.bot.get_chat_member(chat_id, context.bot.id)
+                    can_delete = bot_member.can_delete_messages
+                    
+                    if can_delete:
+                        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
+                        logger.info(f"Deleted user's leaderboard request message {user_message_id} in group chat {chat_id}.")
+                    else:
+                        logger.warning(f"Bot doesn't have delete permissions in group {chat_id}")
+                else:
+                    # Личная переписка - есть права на удаление
+                    await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
+                    logger.info(f"Deleted user's leaderboard request message {user_message_id} in private chat {chat_id}.")
+            except BadRequest as e:
+                logger.warning(f"Could not delete user message {user_message_id} in chat {chat_id}: {e}")
+            except Exception as e:
+                logger.error(f"Error deleting user's leaderboard request: {e}", exc_info=True)
 
     except Exception as e:
         logger.error(f"Error fetching or sending leaderboard for user {user_id} in chat {chat_id}: {e}", exc_info=True)

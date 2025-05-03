@@ -24,7 +24,7 @@ class BeerEntry(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     volume_liters = Column(Float, nullable=False)
-    photo_file_id = Column(String, nullable=False) # Store the Telegram file_id
+    photo_file_id = Column(String, nullable=True)  # Разрешаем NULL для начальных записей
     submitted_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="beer_entries")

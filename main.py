@@ -48,6 +48,9 @@ async def show_leaderboard_button(update: Update, context: ContextTypes.DEFAULT_
     chat_id = query.message.chat_id
     user_id = user.id
     
+    # Сохраняем ID исходного сообщения с кнопкой, чтобы потом удалить его
+    button_message_id = query.message.message_id if query.message else None
+    
     try:
         # Вызываем логику получения таблицы лидеров напрямую из handlers/leaderboard.py
         from db_utils import get_db, get_leaderboard
@@ -75,8 +78,35 @@ async def show_leaderboard_button(update: Update, context: ContextTypes.DEFAULT_
                 medal = medals.get(i, f"{i}.") # Get medal or use number
                 leaderboard_text += f"{medal} {display_name} - {volume:.2f} л\n"
         
-        # Отправляем таблицу как новое сообщение
-        await query.message.reply_text(leaderboard_text)
+        # Отправляем таблицу как новое сообщение (не как reply)
+        sent_message = await context.bot.send_message(
+            chat_id=chat_id,
+            text=leaderboard_text
+        )
+        
+        # Сохраняем ID нового сообщения в контексте пользователя
+        context.user_data[f'last_leaderboard_message_id_{user_id}'] = sent_message.message_id
+        
+        # Удаляем исходное сообщение с кнопкой, если это обычное сообщение (не закрепленное)
+        # Для закрепленного сообщения с кнопкой лидеров мы не будем удалять его
+        if button_message_id:
+            # Проверяем, закреплено ли это сообщение
+            try:
+                pinned_message = await context.bot.get_chat(chat_id)
+                is_pinned = (
+                    pinned_message.pinned_message 
+                    and pinned_message.pinned_message.message_id == button_message_id
+                )
+                
+                # Если это не закрепленное сообщение, удаляем его
+                if not is_pinned:
+                    await context.bot.delete_message(
+                        chat_id=chat_id,
+                        message_id=button_message_id
+                    )
+                    logger.info(f"Deleted leaderboard button message {button_message_id} in chat {chat_id}")
+            except Exception as e:
+                logger.error(f"Error checking pinned status or deleting button message: {e}", exc_info=True)
         
     except Exception as e:
         logger.error(f"Error handling leaderboard button click: {e}", exc_info=True)
