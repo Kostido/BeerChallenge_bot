@@ -3,14 +3,13 @@ services:
   - type: web
     name: beer-challenge-bot
     env: docker
-    plan: free # Можно изменить на paid для продакшена
+    plan: free
     dockerfilePath: ./Dockerfile
-    numInstances: 1
     envVars:
       - key: BOT_TOKEN
-        sync: false # Это значение должно быть задано вручную в UI Render
+        sync: false
       - key: GROUP_CHAT_ID
-        sync: false # Это значение должно быть задано вручную в UI Render
+        sync: false
     
     # Настройки для постоянного хранения данных между перезапусками контейнера
     disk:

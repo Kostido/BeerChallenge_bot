@@ -1,5 +1,6 @@
 # db_utils.py
 import logging
+from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from database.database import SessionLocal # Import from database module
@@ -15,7 +16,7 @@ def get_db():
     finally:
         db.close()
 
-def add_or_update_user(db: Session, user_id: int, first_name: str | None, username: str | None) -> User:
+def add_or_update_user(db: Session, user_id: int, first_name: Optional[str], username: Optional[str]) -> User:
     """Adds a new user or updates existing user's info."""
     db_user = db.query(User).filter(User.id == user_id).first()
     if db_user:
@@ -48,7 +49,7 @@ def add_beer_entry(db: Session, user_id: int, volume: float, photo_id: str) -> B
     logger.info(f"Added beer entry for user {user_id}: {volume}L, photo: {photo_id}")
     return db_entry
 
-def get_leaderboard(db: Session, limit: int = 10) -> list[tuple[str | None, str | None, float]]:
+def get_leaderboard(db: Session, limit: int = 10) -> List[Tuple[Optional[str], Optional[str], float]]:
     """Gets the leaderboard data (top users by total volume), returning first_name, username, and volume."""
     results = (
         db.query(

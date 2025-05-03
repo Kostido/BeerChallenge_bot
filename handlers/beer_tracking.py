@@ -1,6 +1,7 @@
 # handlers/beer_tracking.py
 import logging
 import os
+from typing import Optional, List, Tuple
 from telegram import Update, Message, PhotoSize, InlineKeyboardButton, InlineKeyboardMarkup # Added InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
@@ -25,9 +26,9 @@ AWAITING_VOLUME_CHOICE = 1 # Renamed state
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handles incoming photos, stores file_id, and asks for volume via buttons."""
-    message: Message | None = update.message
+    message: Optional[Message] = update.message
     user = message.from_user
-    photo: tuple[PhotoSize, ...] | None = message.photo
+    photo: Optional[Tuple[PhotoSize, ...]] = message.photo
 
     if not photo:
         logger.warning("Received message with photo filter but no photo.")
