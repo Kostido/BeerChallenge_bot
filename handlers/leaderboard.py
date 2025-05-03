@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 from telegram.error import BadRequest # Import BadRequest
 from db_utils import get_db, get_leaderboard
+from handlers.achievements import get_achievement_for_volume  # Импортируем функцию для определения званий
 
 # Enable logging
 logging.basicConfig(
@@ -63,7 +64,7 @@ async def show_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         if not leaderboard_data:
             leaderboard_text = "Таблица лидеров пока пуста. Будь первым! 🍻"
         else:
-            leaderboard_text = "🏆 Таблица лидеров Franema Summer Beer Challenge: 🏆\n\n"
+            leaderboard_text = "🏆 Таблица лидеров участников - Летний пивной кубок 2025 🏆\n\n"
             medals = {1: "🥇", 2: "🥈", 3: "🥉"}
             for i, (first_name, username, volume) in enumerate(leaderboard_data, start=1):
                 # Construct display name with username if available
@@ -81,7 +82,12 @@ async def show_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     display_name = " ".join(display_name_parts)
 
                 medal = medals.get(i, f"{i}.") # Get medal or use number
-                leaderboard_text += f"{medal} {display_name} - {volume:.2f} л\n"
+                
+                # Определяем звание пользователя по объему выпитого пива
+                achievement = get_achievement_for_volume(volume)
+                achievement_text = f" - {achievement['title']} {achievement['icon']}" if achievement else ""
+                
+                leaderboard_text += f"{medal} {display_name} - {volume:.2f} л{achievement_text}\n"
 
         # Отправляем таблицу как новое сообщение (не как reply)
         sent_message = await context.bot.send_message(

@@ -8,11 +8,12 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from dotenv import load_dotenv
 
 from config import BOT_TOKEN, GROUP_CHAT_ID # Добавлен импорт GROUP_CHAT_ID
-from handlers.start import start
+from handlers.start import start, info, rules
 # Use the conversation handler for beer tracking
 from handlers.beer_tracking import beer_tracking_conv_handler, AWAITING_VOLUME_CHOICE # Import state
 from handlers.leaderboard import show_leaderboard # Import the function directly 
 from database.database import init_db # Import table creation function from database module
+from handlers.achievements import get_achievement_for_volume  # Импортируем функцию для определения званий
 # leaderboard_handler is now handled by MessageHandler below
 from handlers.admin import admin_conv_handler, change_leaderboard_conv_handler, check_submission_conv_handler
 
@@ -61,7 +62,7 @@ async def show_leaderboard_button(update: Update, context: ContextTypes.DEFAULT_
         if not leaderboard_data:
             leaderboard_text = "Таблица лидеров пока пуста. Будь первым! 🍻"
         else:
-            leaderboard_text = "🏆 Таблица лидеров Franema Summer Beer Challenge: 🏆\n\n"
+            leaderboard_text = "🏆 Таблица лидеров участников - Летний пивной кубок 2025 🏆\n\n"
             medals = {1: "🥇", 2: "🥈", 3: "🥉"}
             for i, (first_name, username, volume) in enumerate(leaderboard_data, start=1):
                 display_name_parts = []
@@ -76,7 +77,12 @@ async def show_leaderboard_button(update: Update, context: ContextTypes.DEFAULT_
                     display_name = " ".join(display_name_parts)
 
                 medal = medals.get(i, f"{i}.") # Get medal or use number
-                leaderboard_text += f"{medal} {display_name} - {volume:.2f} л\n"
+                
+                # Определяем звание пользователя по объему выпитого пива
+                achievement = get_achievement_for_volume(volume)
+                achievement_text = f" - {achievement['title']} {achievement['icon']}" if achievement else ""
+                
+                leaderboard_text += f"{medal} {display_name} - {volume:.2f} л{achievement_text}\n"
         
         # Отправляем таблицу как новое сообщение (не как reply)
         sent_message = await context.bot.send_message(
@@ -129,7 +135,7 @@ async def send_leaderboard_button_to_group(application: Application) -> None:
         # Отправляем сообщение с кнопкой в групповой чат
         await application.bot.send_message(
             chat_id=GROUP_CHAT_ID,
-            text="Нажмите на кнопку ниже, чтобы увидеть таблицу лидеров Franema Summer Beer Challenge:",
+            text="Нажмите на кнопку ниже, чтобы увидеть таблицу лидеров Летнего пивного кубка 2025:",
             reply_markup=reply_markup
         )
         logger.info(f"Leaderboard button message sent to group chat: {GROUP_CHAT_ID}")
@@ -163,7 +169,7 @@ async def pin_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # Отправляем сообщение с кнопкой в текущий чат
         message = await context.bot.send_message(
             chat_id=chat_id,
-            text="Нажмите на кнопку ниже, чтобы увидеть таблицу лидеров Franema Summer Beer Challenge:",
+            text="Нажмите на кнопку ниже, чтобы увидеть таблицу лидеров Летнего пивного кубка 2025:",
             reply_markup=reply_markup
         )
         
@@ -194,6 +200,8 @@ async def post_init(application: Application) -> None:
     """Устанавливает команды бота после инициализации и планирует завершение конкурса."""
     bot_commands = [
         BotCommand("start", "Начать участие в челлендже"),
+        BotCommand("info", "Информация об участии в челлендже"),
+        BotCommand("rules", "Правила пивного челленджа"),
         BotCommand("leaderboard", "Показать таблицу лидеров"),
         BotCommand("admin", "Перейти в режим администратора"),
         BotCommand("pin_leaderboard", "Закрепить кнопку таблицы лидеров (только для админов)"),
@@ -291,6 +299,12 @@ def main() -> None:
 
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("start", start))
+    
+    # Добавляем команду /info
+    application.add_handler(CommandHandler("info", info))
+    
+    # Добавляем команду /rules
+    application.add_handler(CommandHandler("rules", rules))
     
     # Добавляем команду /leaderboard
     application.add_handler(CommandHandler("leaderboard", show_leaderboard))
