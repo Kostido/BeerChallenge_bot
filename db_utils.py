@@ -48,19 +48,20 @@ def add_beer_entry(db: Session, user_id: int, volume: float, photo_id: str) -> B
     logger.info(f"Added beer entry for user {user_id}: {volume}L, photo: {photo_id}")
     return db_entry
 
-def get_leaderboard(db: Session, limit: int = 10) -> list[tuple[str, float]]:
-    """Gets the leaderboard data (top users by total volume)."""
+def get_leaderboard(db: Session, limit: int = 10) -> list[tuple[str | None, str | None, float]]:
+    """Gets the leaderboard data (top users by total volume), returning first_name, username, and volume."""
     results = (
         db.query(
-            User.first_name, # Or User.username, depending on preference
+            User.first_name,
+            User.username, # Add username
             func.sum(BeerEntry.volume_liters).label('total_volume')
         )
         .join(BeerEntry, User.id == BeerEntry.user_id)
-        .group_by(User.id)
+        .group_by(User.id, User.first_name, User.username) # Group by username as well
         .order_by(desc('total_volume'))
         .limit(limit)
         .all()
     )
-    # Ensure names are strings, handle None case
-    leaderboard = [(name if name else "Unknown User", volume) for name, volume in results]
+    # Return first_name, username, and volume
+    leaderboard = [(first_name, username, volume) for first_name, username, volume in results]
     return leaderboard

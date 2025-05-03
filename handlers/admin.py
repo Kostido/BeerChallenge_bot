@@ -150,7 +150,9 @@ admin_conv_handler = ConversationHandler(
         AWAITING_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_user_id)],
         AWAITING_NEW_VOLUME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_new_volume)],
     },
-    fallbacks=[]
+    fallbacks=[],
+    per_user=True, # Default, but explicit
+    per_chat=True  # Add this for better group chat handling
 )
 
 change_leaderboard_conv_handler = ConversationHandler(
@@ -159,7 +161,9 @@ change_leaderboard_conv_handler = ConversationHandler(
         AWAITING_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_user_id)],
         AWAITING_NEW_VOLUME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_new_volume)],
     },
-    fallbacks=[]
+    fallbacks=[],
+    per_user=True, # Default, but explicit
+    per_chat=True  # Add this for better group chat handling
 )
 
 check_submission_conv_handler = ConversationHandler(
@@ -171,6 +175,8 @@ check_submission_conv_handler = ConversationHandler(
         AWAITING_NEW_VOLUME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_new_volume)],
     },
     fallbacks=[],
+    per_user=True, # Default, but explicit
+    per_chat=True  # Add this for better group chat handling
 )
 
 logger = logging.getLogger(__name__)
