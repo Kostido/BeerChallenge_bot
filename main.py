@@ -60,7 +60,7 @@ async def show_leaderboard_button(update: Update, context: ContextTypes.DEFAULT_
         from db_utils import get_db, get_leaderboard
         
         with next(get_db()) as db:
-            leaderboard_data = get_leaderboard(db, limit=10) # Get top 10
+            leaderboard_data = get_leaderboard(db, limit=100) # Увеличиваем лимит до 100 участников
 
         if not leaderboard_data:
             leaderboard_text = "Таблица лидеров пока пуста. Будь первым! 🍻"
