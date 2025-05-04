@@ -2,6 +2,9 @@ import logging
 import os
 import datetime
 import pytz
+import threading
+import http.server
+import socketserver
 
 from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup # Добавлен импорт InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler # Добавлен импорт CallbackQueryHandler
@@ -281,6 +284,39 @@ async def announce_winners_command(update: Update, context: ContextTypes.DEFAULT
         logger.error(f"Failed to delete command message: {delete_error}", exc_info=True)
 
 
+def start_http_server():
+    """Запускает простой HTTP-сервер, чтобы Render.com не отключал сервис из-за отсутствия открытых портов."""
+    # Определяем порт из переменной окружения или используем 8080 по умолчанию
+    port = int(os.environ.get("PORT", 8080))
+    
+    # Создаем простой HTTP-обработчик
+    class SimpleHandler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            
+            # Отправляем базовое сообщение
+            message = "Beer Challenge Bot is running! 🍺"
+            self.wfile.write(message.encode())
+            return
+        
+        # Чтобы уменьшить логирование каждого запроса
+        def log_message(self, format, *args):
+            if args[1] != '200':  # Логирование только ошибок, не успешных запросов
+                return http.server.SimpleHTTPRequestHandler.log_message(self, format, *args)
+    
+    # Создаем и запускаем сервер в отдельном потоке
+    try:
+        httpd = socketserver.TCPServer(("", port), SimpleHandler)
+        thread = threading.Thread(target=httpd.serve_forever)
+        thread.daemon = True  # Чтобы поток закрывался вместе с главным процессом
+        thread.start()
+        logger.info(f"Started HTTP server on port {port}")
+    except Exception as e:
+        logger.error(f"Failed to start HTTP server: {e}", exc_info=True)
+
+
 def main() -> None:
     """Start the bot."""
     # Load environment variables from .env file
@@ -327,6 +363,9 @@ def main() -> None:
     application.add_handler(admin_conv_handler)
     application.add_handler(change_leaderboard_conv_handler)
     application.add_handler(check_submission_conv_handler)
+
+    # Запускаем HTTP-сервер для работы с Render.com
+    start_http_server()
 
     # Run the bot until the user presses Ctrl-C
     logger.info("Starting bot...")
