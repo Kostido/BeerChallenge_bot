@@ -1,0 +1,19 @@
+# Исключить только то, что точно не нужно для работы бота
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env.local
+.env.development
+.env.test
+.DS_Store
+.idea/
+.vscode/
+
+# НЕ игнорировать эти папки и файлы (они должны быть загружены)
+# !database/
+# !database/__init__.py
+# !handlers/
+# !handlers/__init__.py
+# !assets/ 

@@ -1,9 +1,23 @@
 # db_utils.py
 import logging
+import os
+import sys
 from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
-from database.database import SessionLocal # Import from database module
+
+# Добавляем обработку различных путей импорта для повышения надежности
+try:
+    from database.database import SessionLocal
+except ImportError:
+    # Пробуем другой вариант импорта, если находимся в корне проекта
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        from database.database import SessionLocal
+    except ImportError:
+        # Последняя попытка с относительным импортом
+        from .database.database import SessionLocal
+
 from models import User, BeerEntry
 
 logger = logging.getLogger(__name__)
