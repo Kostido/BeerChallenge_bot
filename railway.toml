@@ -5,8 +5,13 @@ buildCommand = "pip install -r requirements.txt"
 [deploy]
 startCommand = "python main.py"
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
+restartPolicyMaxRetries = 10
+healthcheckPath = "/"
+healthcheckTimeout = 10
 
 [variables]
 PYTHONPATH = "."
-PYTHONUNBUFFERED = "1" 
+PYTHONUNBUFFERED = "1"
+
+[service]
+instances = 1 

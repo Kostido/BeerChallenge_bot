@@ -13,9 +13,13 @@ services:
         sync: false  # Требуется настройка вручную
       - key: GROUP_CHAT_ID
         sync: false  # Требуется настройка вручную
+      - key: AdminPass
+        sync: false  # Пароль администратора, настраивается вручную
       - key: PORT
         value: 8080
     disk:
       name: beer-challenge-data
       mountPath: /app/database
-      sizeGB: 1  # Минимальный размер для бесплатного плана 
+      sizeGB: 1  # Минимальный размер для бесплатного плана
+    healthCheckPath: /  # Проверка работоспособности HTTP-сервера
+    numInstances: 1  # Гарантируем запуск только одного экземпляра 

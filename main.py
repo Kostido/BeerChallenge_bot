@@ -18,7 +18,7 @@ from handlers.leaderboard import show_leaderboard # Import the function directly
 from database.database import init_db # Import table creation function from database module
 from handlers.achievements import get_achievement_for_volume  # Импортируем функцию для определения званий
 # leaderboard_handler is now handled by MessageHandler below
-from handlers.admin import admin_conv_handler, change_leaderboard_conv_handler, check_submission_conv_handler
+from handlers.admin import admin_conv_handler, change_leaderboard_conv_handler, check_submission_conv_handler, import_users_conv_handler
 
 # Enable logging
 logging.basicConfig(
@@ -208,7 +208,10 @@ async def post_init(application: Application) -> None:
         BotCommand("leaderboard", "Показать таблицу лидеров"),
         BotCommand("admin", "Перейти в режим администратора"),
         BotCommand("pin_leaderboard", "Закрепить кнопку таблицы лидеров (только для админов)"),
-        BotCommand("announce_winners", "Объявить победителей конкурса (только для админов)")
+        BotCommand("announce_winners", "Объявить победителей конкурса (только для админов)"),
+        BotCommand("import_users", "Импортировать список участников (только для админов)"),
+        BotCommand("change_leaderboard", "Изменить объем выпитого пива у участника (только для админов)"),
+        BotCommand("check_submission", "Просмотреть фото участника (только для админов)")
     ]
     
     # Устанавливаем команды бота для всех чатов
@@ -322,6 +325,16 @@ def main() -> None:
     # Load environment variables from .env file
     load_dotenv()
 
+    # Создаем резервную копию базы данных при каждом запуске
+    try:
+        from db_backup import create_backup
+        if create_backup():
+            logger.info("База данных успешно сохранена в резервную копию")
+        else:
+            logger.warning("Не удалось создать резервную копию базы данных")
+    except Exception as e:
+        logger.error(f"Ошибка при создании резервной копии БД: {e}", exc_info=True)
+
     # Create database tables if they don't exist
     logger.info("Creating database tables if they don't exist...")
     init_db()
@@ -366,6 +379,9 @@ def main() -> None:
 
     # Запускаем HTTP-сервер для работы с Render.com
     start_http_server()
+
+    # Регистрируем хендлер для импорта пользователей
+    application.add_handler(import_users_conv_handler)
 
     # Run the bot until the user presses Ctrl-C
     logger.info("Starting bot...")
