@@ -18,7 +18,7 @@ from handlers.leaderboard import show_leaderboard # Import the function directly
 from database.database import init_db # Import table creation function from database module
 from handlers.achievements import get_achievement_for_volume  # Импортируем функцию для определения званий
 # leaderboard_handler is now handled by MessageHandler below
-from handlers.admin import admin_conv_handler, change_leaderboard_conv_handler, check_submission_conv_handler, import_users_conv_handler
+from handlers.admin import admin_conv_handler, change_leaderboard_conv_handler, check_submission_conv_handler, import_users_conv_handler, delete_user_conv_handler, list_users_command
 
 # Enable logging
 logging.basicConfig(
@@ -146,59 +146,6 @@ async def send_leaderboard_button_to_group(application: Application) -> None:
         logger.error(f"Failed to send leaderboard button to group chat: {e}", exc_info=True)
 
 
-async def pin_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Отправляет сообщение с кнопкой таблицы лидеров в текущий чат и закрепляет его. Только для администраторов."""
-    user = update.effective_user
-    chat_id = update.effective_chat.id
-    
-    # Проверка на администратора
-    try:
-        chat_member = await context.bot.get_chat_member(chat_id, user.id)
-        if chat_member.status not in ['administrator', 'creator']:
-            await update.message.reply_text("Эта команда доступна только администраторам чата.")
-            return
-    except Exception as e:
-        logger.error(f"Error checking admin status: {e}", exc_info=True)
-        await update.message.reply_text("Не удалось проверить права администратора.")
-        return
-    
-    # Создаем inline-клавиатуру с кнопкой для таблицы лидеров
-    keyboard = [
-        [InlineKeyboardButton("🏆 Таблица лидеров 🏆", callback_data="show_leaderboard")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    try:
-        # Отправляем сообщение с кнопкой в текущий чат
-        message = await context.bot.send_message(
-            chat_id=chat_id,
-            text="Нажмите на кнопку ниже, чтобы увидеть таблицу лидеров Летнего пивного кубка 2025:",
-            reply_markup=reply_markup
-        )
-        
-        # Закрепляем сообщение
-        await context.bot.pin_chat_message(
-            chat_id=chat_id,
-            message_id=message.message_id,
-            disable_notification=True
-        )
-        
-        logger.info(f"Leaderboard button message sent and pinned to chat {chat_id}")
-        
-        # Удаляем оригинальное сообщение с командой
-        try:
-            await context.bot.delete_message(
-                chat_id=chat_id,
-                message_id=update.message.message_id
-            )
-        except Exception as delete_error:
-            logger.error(f"Failed to delete command message: {delete_error}", exc_info=True)
-            
-    except Exception as e:
-        logger.error(f"Failed to send or pin leaderboard button: {e}", exc_info=True)
-        await update.message.reply_text("Не удалось отправить или закрепить кнопку таблицы лидеров.")
-
-
 async def post_init(application: Application) -> None:
     """Устанавливает команды бота после инициализации и планирует завершение конкурса."""
     bot_commands = [
@@ -207,11 +154,12 @@ async def post_init(application: Application) -> None:
         BotCommand("rules", "Правила пивного челленджа"),
         BotCommand("leaderboard", "Показать таблицу лидеров"),
         BotCommand("admin", "Перейти в режим администратора"),
-        BotCommand("pin_leaderboard", "Закрепить кнопку таблицы лидеров (только для админов)"),
         BotCommand("announce_winners", "Объявить победителей конкурса (только для админов)"),
         BotCommand("import_users", "Импортировать список участников (только для админов)"),
         BotCommand("change_leaderboard", "Изменить объем выпитого пива у участника (только для админов)"),
-        BotCommand("check_submission", "Просмотреть фото участника (только для админов)")
+        BotCommand("check_submission", "Просмотреть фото участника (только для админов)"),
+        BotCommand("delete_user", "Удалить участника (только для админов)"),
+        BotCommand("list_users", "Показать список участников (только для админов)")
     ]
     
     # Устанавливаем команды бота для всех чатов
@@ -358,11 +306,11 @@ def main() -> None:
     # Добавляем команду /leaderboard
     application.add_handler(CommandHandler("leaderboard", show_leaderboard))
     
-    # Добавляем команду для закрепления кнопки таблицы лидеров
-    application.add_handler(CommandHandler("pin_leaderboard", pin_leaderboard))
-    
     # Добавляем команду для ручного объявления победителей
     application.add_handler(CommandHandler("announce_winners", announce_winners_command))
+    
+    # Добавляем команду для показа списка участников
+    application.add_handler(CommandHandler("list_users", list_users_command))
 
     # Add handlers for the buttons
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^Выпил пиво$'), prompt_for_photo))
@@ -382,6 +330,9 @@ def main() -> None:
 
     # Регистрируем хендлер для импорта пользователей
     application.add_handler(import_users_conv_handler)
+    
+    # Регистрируем хендлер для удаления пользователей
+    application.add_handler(delete_user_conv_handler)
 
     # Run the bot until the user presses Ctrl-C
     logger.info("Starting bot...")

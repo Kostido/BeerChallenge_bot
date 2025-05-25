@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 ADMIN_PASSWORD = os.environ.get("AdminPass")  # Теперь пароль берется из переменной окружения
 AWAITING_PASSWORD, AWAITING_USER_ID, AWAITING_NEW_VOLUME, AWAITING_SUBMISSION_USER = range(4)
 AWAITING_ENTRY_ACTION, AWAITING_ACTION_CHOICE, AWAITING_USER_LIST = range(4, 7)
+AWAITING_DELETE_USER_ID, AWAITING_DELETE_CONFIRMATION = range(7, 9)
 
 admin_ids = set()  # Временное хранение id админов
 
@@ -23,10 +24,21 @@ async def admin_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def check_admin_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message.text == ADMIN_PASSWORD:
         admin_ids.add(update.effective_user.id)
-        await update.message.reply_text("Режим администратора активирован.\nДоступные команды:\n/change_leaderboard — изменить объем участника\n/check_submission — посмотреть фото участника")
+        await update.message.reply_text("Режим администратора активирован.\nДоступные команды:\n/change_leaderboard — изменить объем участника\n/check_submission — посмотреть фото участника\n/delete_user — удалить участника\n/list_users — показать список участников")
         return ConversationHandler.END
     await update.message.reply_text("Неверный пароль. Попробуйте снова или /cancel.")
     return AWAITING_PASSWORD
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Отменяет текущий диалог администратора и завершает разговор."""
+    user = update.message.from_user
+    logger.info(f"Admin {user.first_name} ({user.id}) canceled the conversation via command.")
+    
+    # Очищаем все временные данные пользователя
+    context.user_data.clear()
+    
+    await update.message.reply_text("Операция отменена.")
+    return ConversationHandler.END
 
 async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Fetches and sends a list of users to the admin for selection."""
@@ -155,9 +167,10 @@ async def import_users_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     await update.message.reply_text(
         "Введите список участников в формате:\n\n"
-        "ID: 123456789, Имя: Имя_участника, Объем: X.XX л\n"
-        "ID: 987654321, Имя: Другой_участник, Объем: Y.YY л\n\n"
-        "Каждый участник должен быть на отдельной строке."
+        "ID: 123456789, Имя: Имя_участника, Ник: @username, Объем: X.XX л\n"
+        "ID: 987654321, Имя: Другой_участник, Ник: нет, Объем: Y.YY л\n\n"
+        "Каждый участник должен быть на отдельной строке.\n"
+        "Поле 'Ник:' обязательно, если нет ника - укажите 'нет'"
     )
     return AWAITING_USER_LIST
 
@@ -170,21 +183,31 @@ async def receive_user_list(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     failed_imports = 0
     results = []
     
-    # Регулярное выражение для извлечения данных из строки
-    pattern = r'ID:\s*(\d+),\s*Имя:\s*([^,]+),\s*Объем:\s*(\d+\.?\d*)\s*л'
+    # Регулярное выражение для извлечения данных из строки с поддержкой обоих форматов
+    pattern = r'ID:\s*(\d+),\s*Имя:\s*([^,]+),\s*Ник:\s*([^,]+),\s*Объем:\s*(\d+\.?\d*)\s*л'
     
     for line in user_lines:
         match = re.search(pattern, line)
         if match:
-            user_id, name, volume = match.groups()
+            user_id, name, username_raw, volume = match.groups()
             
             try:
                 user_id = int(user_id)
                 volume = float(volume)
                 
+                # Обрабатываем username
+                username = None
+                if username_raw.strip().lower() not in ['нет', 'no', '-', '']:
+                    # Убираем @ если есть, и очищаем пробелы
+                    username = username_raw.strip().lstrip('@')
+                    if username:  # Проверяем что не пустая строка
+                        username = username
+                    else:
+                        username = None
+                
                 with next(get_db()) as db:
                     # Добавляем или обновляем пользователя
-                    add_or_update_user(db, user_id=user_id, first_name=name, username=None)
+                    add_or_update_user(db, user_id=user_id, first_name=name.strip(), username=username)
                     
                     # Удаляем существующие записи о пиве для этого пользователя
                     db.query(BeerEntry).filter(BeerEntry.user_id == user_id).delete()
@@ -193,7 +216,9 @@ async def receive_user_list(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     db.add(BeerEntry(user_id=user_id, volume_liters=volume, photo_file_id="imported_by_admin"))
                     db.commit()
                 
-                results.append(f"✅ ID: {user_id}, Имя: {name}, Объем: {volume:.2f} л")
+                # Форматируем результат
+                username_display = f"@{username}" if username else "нет"
+                results.append(f"✅ ID: {user_id}, Имя: {name.strip()}, Ник: {username_display}, Объем: {volume:.2f} л")
                 successful_imports += 1
             
             except Exception as e:
@@ -217,6 +242,167 @@ async def receive_user_list(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     return ConversationHandler.END
 
+async def delete_user_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Запускает процесс удаления пользователя."""
+    if update.effective_user.id not in admin_ids:
+        await update.message.reply_text("Нет доступа. Введите /admin для входа.")
+        return ConversationHandler.END
+    
+    # Показываем список всех пользователей
+    try:
+        with next(get_db()) as db:
+            users = db.query(User).all()
+
+        if not users:
+            await update.message.reply_text("Список участников пуст.")
+            return ConversationHandler.END
+
+        user_list_text = "Список участников для удаления:\n"
+        for user in users:
+            # Получаем общий объем пива для каждого пользователя
+            with next(get_db()) as db:
+                total_volume = db.query(BeerEntry).filter(BeerEntry.user_id == user.id).with_entities(func.sum(BeerEntry.volume_liters)).scalar() or 0
+            user_list_text += f"ID: {user.id}, Имя: {user.first_name}, Объем: {total_volume:.2f} л\n"
+
+        await update.message.reply_text(user_list_text + "\nВведите ID пользователя для удаления:")
+        return AWAITING_DELETE_USER_ID
+
+    except Exception as e:
+        logger.error(f"Error fetching users for deletion: {e}", exc_info=True)
+        await update.message.reply_text("Не удалось загрузить список участников. Попробуйте позже.")
+        return ConversationHandler.END
+
+async def receive_delete_user_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Получает ID пользователя для удаления и запрашивает подтверждение."""
+    user_id = update.message.text
+    
+    try:
+        user_id = int(user_id)
+        
+        # Проверяем, существует ли пользователь
+        with next(get_db()) as db:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                await update.message.reply_text("Пользователь с таким ID не найден. Попробуйте еще раз или /cancel для отмены.")
+                return AWAITING_DELETE_USER_ID
+            
+            # Получаем общий объем пива
+            total_volume = db.query(BeerEntry).filter(BeerEntry.user_id == user_id).with_entities(func.sum(BeerEntry.volume_liters)).scalar() or 0
+            
+            # Сохраняем данные пользователя для удаления
+            context.user_data['delete_user_id'] = user_id
+            context.user_data['delete_user_name'] = user.first_name
+            context.user_data['delete_user_volume'] = total_volume
+            
+            await update.message.reply_text(
+                f"❗️ ВНИМАНИЕ ❗️\n\n"
+                f"Вы собираетесь удалить участника:\n"
+                f"ID: {user_id}\n"
+                f"Имя: {user.first_name}\n"
+                f"Общий объем: {total_volume:.2f} л\n\n"
+                f"Это действие удалит пользователя и ВСЕ его записи о пиве из базы данных!\n"
+                f"Это действие НЕОБРАТИМО!\n\n"
+                f"Введите 'УДАЛИТЬ' (заглавными буквами) для подтверждения или /cancel для отмены:"
+            )
+            return AWAITING_DELETE_CONFIRMATION
+            
+    except ValueError:
+        await update.message.reply_text("Неверный формат ID. Введите числовой ID или /cancel для отмены.")
+        return AWAITING_DELETE_USER_ID
+    except Exception as e:
+        logger.error(f"Error checking user for deletion: {e}", exc_info=True)
+        await update.message.reply_text("Произошла ошибка при проверке пользователя. Попробуйте позже.")
+        return ConversationHandler.END
+
+async def confirm_delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Подтверждает и выполняет удаление пользователя."""
+    confirmation = update.message.text.strip()
+    
+    if confirmation != "УДАЛИТЬ":
+        await update.message.reply_text("Удаление отменено. Для подтверждения нужно ввести 'УДАЛИТЬ' заглавными буквами.")
+        return ConversationHandler.END
+    
+    # Получаем данные пользователя из контекста
+    user_id = context.user_data.get('delete_user_id')
+    user_name = context.user_data.get('delete_user_name')
+    user_volume = context.user_data.get('delete_user_volume')
+    
+    if not user_id:
+        await update.message.reply_text("Ошибка: данные пользователя не найдены. Попробуйте снова.")
+        return ConversationHandler.END
+    
+    try:
+        with next(get_db()) as db:
+            # Удаляем все записи о пиве пользователя
+            deleted_entries = db.query(BeerEntry).filter(BeerEntry.user_id == user_id).delete()
+            
+            # Удаляем самого пользователя
+            deleted_user = db.query(User).filter(User.id == user_id).delete()
+            
+            # Применяем изменения
+            db.commit()
+            
+            if deleted_user > 0:
+                await update.message.reply_text(
+                    f"✅ Участник успешно удален:\n"
+                    f"ID: {user_id}\n"
+                    f"Имя: {user_name}\n"
+                    f"Удалено записей о пиве: {deleted_entries}\n"
+                    f"Удаленный объем: {user_volume:.2f} л"
+                )
+                logger.info(f"Admin {update.effective_user.id} deleted user {user_id} ({user_name}) with {deleted_entries} beer entries")
+            else:
+                await update.message.reply_text("Пользователь не был найден (возможно, уже удален).")
+                
+    except Exception as e:
+        logger.error(f"Error deleting user {user_id}: {e}", exc_info=True)
+        await update.message.reply_text("Произошла ошибка при удалении пользователя. Попробуйте позже.")
+    
+    # Очищаем временные данные
+    context.user_data.pop('delete_user_id', None)
+    context.user_data.pop('delete_user_name', None)
+    context.user_data.pop('delete_user_volume', None)
+    
+    return ConversationHandler.END
+
+async def list_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Отображает простой список всех участников с их данными."""
+    if update.effective_user.id not in admin_ids:
+        await update.message.reply_text("Нет доступа. Введите /admin для входа.")
+        return
+    
+    try:
+        with next(get_db()) as db:
+            users = db.query(User).all()
+
+        if not users:
+            await update.message.reply_text("Список участников пуст.")
+            return
+
+        user_list_text = "Список участников:\n"
+        for user in users:
+            # Получаем общий объем пива для каждого пользователя
+            with next(get_db()) as db:
+                total_volume = db.query(BeerEntry).filter(BeerEntry.user_id == user.id).with_entities(func.sum(BeerEntry.volume_liters)).scalar() or 0
+            
+            # Форматируем строку с учетом наличия username
+            if user.username:
+                user_list_text += f"ID: {user.id}, Имя: {user.first_name}, Ник: @{user.username}, Объем: {total_volume:.2f} л\n"
+            else:
+                user_list_text += f"ID: {user.id}, Имя: {user.first_name}, Ник: нет, Объем: {total_volume:.2f} л\n"
+
+        # Разбиваем на части если текст слишком длинный для Telegram
+        if len(user_list_text) > 4096:
+            chunks = [user_list_text[i:i+4000] for i in range(0, len(user_list_text), 4000)]
+            for i, chunk in enumerate(chunks):
+                await update.message.reply_text(f"Часть {i+1}/{len(chunks)}:\n{chunk}")
+        else:
+            await update.message.reply_text(user_list_text)
+
+    except Exception as e:
+        logger.error(f"Error fetching users list: {e}", exc_info=True)
+        await update.message.reply_text("Не удалось загрузить список участников. Попробуйте позже.")
+
 admin_conv_handler = ConversationHandler(
     entry_points=[CommandHandler("admin", admin_entry)],
     states={
@@ -224,7 +410,7 @@ admin_conv_handler = ConversationHandler(
         AWAITING_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_user_id)],
         AWAITING_NEW_VOLUME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_new_volume)],
     },
-    fallbacks=[],
+    fallbacks=[CommandHandler('cancel', cancel)],
     per_user=True, # Default, but explicit
     per_chat=True  # Add this for better group chat handling
 )
@@ -235,7 +421,7 @@ change_leaderboard_conv_handler = ConversationHandler(
         AWAITING_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_user_id)],
         AWAITING_NEW_VOLUME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_new_volume)],
     },
-    fallbacks=[],
+    fallbacks=[CommandHandler('cancel', cancel)],
     per_user=True, # Default, but explicit
     per_chat=True  # Add this for better group chat handling
 )
@@ -248,7 +434,7 @@ check_submission_conv_handler = ConversationHandler(
         AWAITING_ACTION_CHOICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_or_delete_entry)],
         AWAITING_NEW_VOLUME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_new_volume)],
     },
-    fallbacks=[],
+    fallbacks=[CommandHandler('cancel', cancel)],
     per_user=True, # Default, but explicit
     per_chat=True  # Add this for better group chat handling
 )
@@ -258,7 +444,18 @@ import_users_conv_handler = ConversationHandler(
     states={
         AWAITING_USER_LIST: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_user_list)],
     },
-    fallbacks=[],
+    fallbacks=[CommandHandler('cancel', cancel)],
+    per_user=True,
+    per_chat=True
+)
+
+delete_user_conv_handler = ConversationHandler(
+    entry_points=[CommandHandler("delete_user", delete_user_entry)],
+    states={
+        AWAITING_DELETE_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_delete_user_id)],
+        AWAITING_DELETE_CONFIRMATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_delete_user)],
+    },
+    fallbacks=[CommandHandler('cancel', cancel)],
     per_user=True,
     per_chat=True
 )
